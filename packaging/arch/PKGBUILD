@@ -1,0 +1,34 @@
+pkgname=application-priority-setter
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Lightweight Qt application for viewing and changing Linux process priorities'
+arch=('x86_64')
+license=('GPL-3.0-or-later')
+depends=('qt6-base' 'qt6-declarative' 'qt6-wayland')
+makedepends=('cmake' 'rust' 'clang' 'git')
+options=('!lto')
+source=(
+    "$pkgname-$pkgver.tar.gz"
+    'io.github.applicationprioritysetter.desktop'
+)
+sha256sums=('SKIP' 'SKIP')
+
+build() {
+    CXXFLAGS+=" -ffile-prefix-map=$srcdir=/usr/src/debug/$pkgbase-$pkgver"
+    RUSTFLAGS+=" --remap-path-prefix=$srcdir=/usr/src/debug/$pkgbase-$pkgver"
+    export CXXFLAGS RUSTFLAGS
+
+    cmake \
+        -S "$srcdir/$pkgname-$pkgver" \
+        -B build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_INSTALL_LIBDIR=lib
+    cmake --build build
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+    install -Dm644 "$srcdir/io.github.applicationprioritysetter.desktop" \
+        "$pkgdir/usr/share/applications/io.github.applicationprioritysetter.desktop"
+}

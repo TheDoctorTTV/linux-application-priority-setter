@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Application Priority Setter
+Comment=View running applications and change their CPU priority
+Exec=application-priority-setter
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Utility;
+Keywords=process;priority;nice;performance;
+StartupNotify=true
