@@ -1,4 +1,5 @@
 use crate::desktop;
+use crate::rules::SavedRules;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -17,6 +18,8 @@ pub struct Application {
     pub pids: Vec<i32>,
     pub nice: i32,
     pub mixed_priority: bool,
+    pub rule_key: String,
+    pub saved_nice: Option<i32>,
 }
 
 #[derive(Clone, Debug)]
@@ -184,21 +187,70 @@ fn build_application(key: String, mut group: ProcessGroup) -> Option<Application
         .iter()
         .map(|process| process.identity.pid)
         .collect();
+    let executable_string = representative.executable.display().to_string();
+    let rule_key = stable_rule_key(
+        group.app_id.as_deref(),
+        desktop_entry.as_ref().map(|entry| entry.id.as_str()),
+        &executable_string,
+        &representative.name,
+    );
 
     Some(ApplicationSnapshot {
         application: Application {
             key,
             name,
             icon,
-            executable: representative.executable.display().to_string(),
+            executable: executable_string,
             main_pid: representative.identity.pid,
             process_count: group.processes.len(),
             pids,
             nice,
             mixed_priority,
+            rule_key,
+            saved_nice: None,
         },
         processes: identities,
     })
+}
+
+/// Stable identifier for a saved-priority rule.
+///
+/// Prefers the desktop-entry ID, falls back to the systemd app-id, and
+/// finally to the executable path so rules survive PID changes and restarts.
+pub fn stable_rule_key(
+    app_id: Option<&str>,
+    desktop_id: Option<&str>,
+    executable: &str,
+    process_name: &str,
+) -> String {
+    if let Some(id) = desktop_id.map(normalize_rule_id).filter(|id| !id.is_empty()) {
+        return format!("desktop:{id}");
+    }
+    if let Some(id) = app_id.map(normalize_rule_id).filter(|id| !id.is_empty()) {
+        return format!("app-id:{id}");
+    }
+    let executable = executable.trim();
+    if !executable.is_empty() {
+        return format!("exe:{}", executable.to_lowercase());
+    }
+    format!("exe:name:{}", process_name.to_lowercase())
+}
+
+fn normalize_rule_id(value: &str) -> String {
+    value
+        .trim()
+        .trim_end_matches(".desktop")
+        .trim_start_matches("app-")
+        .trim_start_matches("flatpak-")
+        .replace("\\x2d", "-")
+        .to_lowercase()
+}
+
+/// Fills `saved_nice` on each snapshot from the persisted rules.
+pub fn attach_saved_rules(applications: &mut [ApplicationSnapshot], rules: &SavedRules) {
+    for snapshot in applications {
+        snapshot.application.saved_nice = rules.get(&snapshot.application.rule_key).copied();
+    }
 }
 
 fn find_tree_root(pid: i32, processes: &HashMap<i32, Process>) -> i32 {
@@ -425,6 +477,36 @@ mod tests {
     }
 
     #[test]
+    fn prefers_desktop_id_for_rule_keys() {
+        assert_eq!(
+            stable_rule_key(
+                Some("org.example.App"),
+                Some("org.example.App"),
+                "/usr/bin/example",
+                "example"
+            ),
+            "desktop:org.example.app"
+        );
+        assert_eq!(
+            stable_rule_key(
+                Some("org.example.App"),
+                None,
+                "/usr/bin/example",
+                "example"
+            ),
+            "app-id:org.example.app"
+        );
+        assert_eq!(
+            stable_rule_key(None, None, "/Usr/Bin/Example", "example"),
+            "exe:/usr/bin/example"
+        );
+        assert_eq!(
+            stable_rule_key(None, None, "", "Example_Helper"),
+            "exe:name:example_helper"
+        );
+    }
+
+    #[test]
     fn scans_the_current_users_processes() {
         let applications = scan_current_user().unwrap();
         let this_pid = std::process::id() as i32;
@@ -436,6 +518,11 @@ mod tests {
                 .iter()
                 .all(|process| process.pid != this_pid)
         }));
+        assert!(
+            applications
+                .iter()
+                .all(|application| !application.application.rule_key.is_empty())
+        );
     }
 
     fn test_process(pid: i32, parent_pid: i32, name: &str) -> Process {

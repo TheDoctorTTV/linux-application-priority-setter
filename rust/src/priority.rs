@@ -10,7 +10,7 @@ pub struct ApplyResult {
 
 pub fn apply(identities: &[ProcessIdentity], nice: i32) -> ApplyResult {
     let mut result = ApplyResult::default();
-    let nice = nice.clamp(-10, 19);
+    let nice = nice.clamp(-20, 19);
 
     for identity in identities {
         match process_start_time(identity.pid) {

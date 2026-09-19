@@ -10,6 +10,9 @@ A lightweight Linux desktop application for viewing running applications and cha
 - Searches by application name or executable path.
 - Applies bounded CPU nice values to every process in an application group.
 - Resets a selected application's grouped processes to the normal nice value of 0.
+- Optionally saves a priority per application (`~/.config/application-priority-setter/rules.json`, keyed by desktop ID with executable fallback) and re-applies it automatically on every refresh.
+- Optional startup entry (Preferences) that starts the app when you log in, using the system autostart folder.
+- System tray icon with Show/Hide and Quit, plus an optional close-to-tray mode (Preferences) so closing the window keeps the app running in the background.
 - Verifies PID start times before changing priority to prevent PID-reuse mistakes.
 - Reports when a higher priority requires authorization.
 
@@ -32,7 +35,7 @@ Plain `./build.sh` defaults to the native Arch package build:
 
 ```bash
 ./build.sh
-sudo pacman -U dist/arch/application-priority-setter-0.1.0-1-x86_64.pkg.tar.zst
+sudo pacman -U dist/arch/application-priority-setter-0.2.0-1-x86_64.pkg.tar.zst
 ```
 
 This uses [the included PKGBUILD](packaging/arch/PKGBUILD), writes the package under `dist/arch/`, and does not install or launch it automatically.

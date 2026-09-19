@@ -18,6 +18,21 @@ ApplicationWindow {
     property string selectedKey: ""
     property int selectedNice: 0
     property bool refreshIndicatorVisible: false
+    // Set by the tray's Quit action so onClosing can tell a real quit apart
+    // from a window close that should minimize to the tray instead.
+    property bool allowQuit: false
+
+    onClosing: (close) => {
+        if (settings.closeToTray && !root.allowQuit) {
+            close.accepted = false
+            root.hide()
+        }
+    }
+
+    // Secondary text derived from the theme's text color at reduced opacity,
+    // so it stays readable in both light and dark modes. (palette.mid is a
+    // 3D-bevel gray, not a text color — it vanishes on both themes.)
+    readonly property color secondaryTextColor: Qt.rgba(palette.text.r, palette.text.g, palette.text.b, 0.65)
 
     function iconSource(icon) {
         if (!icon)
@@ -35,6 +50,18 @@ ApplicationWindow {
         })
     }
 
+    function selectedApplication() {
+        for (let i = 0; i < applications.length; ++i) {
+            if (applications[i].key === selectedKey)
+                return applications[i]
+        }
+        return null
+    }
+
+    function formatNice(value) {
+        return value > 0 ? "+" + value : "" + value
+    }
+
     function syncApplicationModel() {
         const next = visibleApplications()
 
@@ -48,7 +75,9 @@ ApplicationWindow {
                 "mainPid": source.mainPid,
                 "processCount": source.processCount,
                 "nice": source.nice,
-                "mixedPriority": source.mixedPriority
+                "mixedPriority": source.mixedPriority,
+                "ruleKey": source.ruleKey || "",
+                "savedNice": (source.savedNice === undefined) ? null : source.savedNice
             }
             let currentIndex = -1
 
@@ -75,6 +104,7 @@ ApplicationWindow {
     Settings {
         id: settings
         property int refreshInterval: 5
+        property bool closeToTray: false
     }
 
     ListModel {
@@ -139,7 +169,7 @@ ApplicationWindow {
                 }
                 Label {
                     text: qsTr("%1 running applications").arg(controller.applicationCount)
-                    color: palette.mid
+                    color: root.secondaryTextColor
                     font.pixelSize: 12
                 }
             }
@@ -149,7 +179,24 @@ ApplicationWindow {
                 Layout.preferredWidth: 250
                 placeholderText: qsTr("Search applications")
                 selectByMouse: true
+                rightPadding: clearButton.visible ? clearButton.width + 4 : 8
                 onTextChanged: root.syncApplicationModel()
+
+                ToolButton {
+                    id: clearButton
+                    anchors.right: parent.right
+                    anchors.rightMargin: 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 28
+                    height: 28
+                    visible: searchField.text.length > 0
+                    text: qsTr("×")
+                    font.pixelSize: 16
+                    Accessible.name: qsTr("Clear search")
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Clear search")
+                    onClicked: searchField.clear()
+                }
             }
 
             Item {
@@ -168,7 +215,7 @@ ApplicationWindow {
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("Refreshing")
-                        color: palette.mid
+                        color: root.secondaryTextColor
                         font.pixelSize: 12
                     }
                 }
@@ -204,7 +251,7 @@ ApplicationWindow {
                 anchors.rightMargin: 24
                 Label { text: qsTr("APPLICATION"); font.pixelSize: 11; font.bold: true; Layout.fillWidth: true }
                 Label { text: qsTr("PROCESSES"); font.pixelSize: 11; font.bold: true; Layout.preferredWidth: 90; horizontalAlignment: Text.AlignHCenter }
-                Label { text: qsTr("NICE"); font.pixelSize: 11; font.bold: true; Layout.preferredWidth: 70; horizontalAlignment: Text.AlignHCenter }
+                Label { text: qsTr("NICE"); font.pixelSize: 11; font.bold: true; Layout.preferredWidth: 110; horizontalAlignment: Text.AlignHCenter }
             }
         }
 
@@ -227,6 +274,8 @@ ApplicationWindow {
                 required property int processCount
                 required property int nice
                 required property bool mixedPriority
+                required property string ruleKey
+                required property var savedNice
                 width: applicationList.width
                 height: 58
                 highlighted: root.selectedKey === key
@@ -277,7 +326,7 @@ ApplicationWindow {
                             text: executable
                                 ? qsTr("Main PID %1  ·  %2").arg(mainPid).arg(executable)
                                 : qsTr("Main PID %1").arg(mainPid)
-                            color: palette.mid
+                            color: root.secondaryTextColor
                             font.pixelSize: 11
                             elide: Text.ElideMiddle
                             Layout.fillWidth: true
@@ -288,11 +337,23 @@ ApplicationWindow {
                         Layout.preferredWidth: 90
                         horizontalAlignment: Text.AlignHCenter
                     }
-                    Label {
-                        text: mixedPriority ? qsTr("Mixed") : (nice > 0 ? "+" + nice : nice)
-                        Layout.preferredWidth: 70
-                        horizontalAlignment: Text.AlignHCenter
-                        font.family: "monospace"
+                    ColumnLayout {
+                        Layout.preferredWidth: 110
+                        spacing: 0
+                        Label {
+                            text: mixedPriority ? qsTr("Mixed") : root.formatNice(nice)
+                            Layout.alignment: Qt.AlignHCenter
+                            horizontalAlignment: Text.AlignHCenter
+                            font.family: "monospace"
+                        }
+                        Label {
+                            visible: savedNice !== null && savedNice !== undefined
+                            text: qsTr("saved %1").arg(root.formatNice(savedNice))
+                            Layout.alignment: Qt.AlignHCenter
+                            color: root.secondaryTextColor
+                            font.pixelSize: 11
+                            font.family: "monospace"
+                        }
                     }
                 }
             }
@@ -301,7 +362,7 @@ ApplicationWindow {
                 anchors.centerIn: parent
                 visible: applicationList.count === 0
                 text: searchField.text.length ? qsTr("No applications match your search") : qsTr("No applications found")
-                color: palette.mid
+                color: root.secondaryTextColor
             }
         }
 
@@ -320,7 +381,7 @@ ApplicationWindow {
 
                 Label {
                     text: controller.statusMessage || qsTr("Select an application to change its CPU priority")
-                    color: palette.mid
+                    color: root.secondaryTextColor
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
@@ -338,7 +399,11 @@ ApplicationWindow {
                         { label: qsTr("Low (+10)"), nice: 10 }
                     ]
                     currentIndex: 2
-                    onActivated: root.selectedNice = currentValue
+                    onActivated: {
+                        root.selectedNice = currentValue
+                        if (root.selectedKey.length > 0)
+                            controller.applyPriority(root.selectedKey, currentValue)
+                    }
                 }
 
                 Button {
@@ -352,10 +417,24 @@ ApplicationWindow {
                 }
 
                 Button {
-                    text: qsTr("Apply Priority")
-                    highlighted: true
+                    text: qsTr("Save")
                     enabled: root.selectedKey.length > 0
-                    onClicked: controller.applyPriority(root.selectedKey, root.selectedNice)
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Remember this priority and re-apply it automatically")
+                    onClicked: controller.savePriority(root.selectedKey, root.selectedNice)
+                }
+
+                Button {
+                    text: qsTr("Forget")
+                    enabled: {
+                        if (root.selectedKey.length === 0)
+                            return false
+                        const app = root.selectedApplication()
+                        return app !== null && app.savedNice !== null && app.savedNice !== undefined
+                    }
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Stop re-applying a saved priority for this application")
+                    onClicked: controller.clearSavedPriority(root.selectedKey)
                 }
             }
         }
@@ -379,7 +458,7 @@ ApplicationWindow {
             }
             Label {
                 text: qsTr("Update the running application list every %1 second(s).").arg(settings.refreshInterval)
-                color: palette.mid
+                color: root.secondaryTextColor
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
             }
@@ -405,7 +484,59 @@ ApplicationWindow {
             }
             Label {
                 text: qsTr("Faster refreshes use slightly more CPU. Five seconds is a good balance for normal use.")
-                color: palette.mid
+                color: root.secondaryTextColor
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Label {
+                text: qsTr("Startup")
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Label {
+                    text: qsTr("Start automatically when you log in")
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                Switch {
+                    checked: controller.autostartEnabled
+                    Accessible.name: qsTr("Start automatically when you log in")
+                    onToggled: controller.setAutostart(checked)
+                }
+            }
+            Label {
+                text: qsTr("Adds or removes a startup entry following the system autostart folder.")
+                color: root.secondaryTextColor
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+            Label {
+                text: qsTr("System Tray")
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
+                Label {
+                    text: qsTr("Close to the system tray instead of quitting")
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                Switch {
+                    checked: settings.closeToTray
+                    Accessible.name: qsTr("Close to the system tray instead of quitting")
+                    onToggled: settings.closeToTray = checked
+                }
+            }
+            Label {
+                text: qsTr("The tray icon shows the app is running. Use its Quit entry to exit fully.")
+                color: root.secondaryTextColor
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true

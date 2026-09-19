@@ -1,5 +1,5 @@
 pkgname=application-priority-setter
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Lightweight Qt application for viewing and changing Linux process priorities'
 arch=('x86_64')
